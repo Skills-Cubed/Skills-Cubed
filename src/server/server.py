@@ -25,14 +25,6 @@ async def lifespan(server):
 mcp = FastMCP(
     "skills-cubed",
     lifespan=lifespan,
-    middleware=[
-        Middleware(
-            CORSMiddleware,
-            allow_origins=["*"],
-            allow_methods=["*"],
-            allow_headers=["*"],
-        ),
-    ],
 )
 
 
