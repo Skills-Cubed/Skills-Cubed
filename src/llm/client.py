@@ -6,7 +6,7 @@ from google import genai
 _client = None
 
 FLASH_MODEL = os.getenv("GEMINI_FLASH_MODEL", "gemini-2.0-flash")
-PRO_MODEL = os.getenv("GEMINI_PRO_MODEL", "gemini-2.0-pro")
+PRO_MODEL = os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro")
 EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
 
 
