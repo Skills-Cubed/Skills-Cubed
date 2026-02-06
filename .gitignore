@@ -35,6 +35,10 @@ data/abcd/data/abcd_v1.1.json
 # Claude Code
 .claude/
 
+# Eval outputs
+eval_*.json
+eval_output/
+
 # OS
 .DS_Store
 Thumbs.db

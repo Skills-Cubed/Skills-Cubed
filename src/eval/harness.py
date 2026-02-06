@@ -12,6 +12,7 @@ import asyncio
 import gzip
 import json
 import logging
+import os
 import time
 import uuid
 from dataclasses import asdict
@@ -90,25 +91,43 @@ class EvaluationHarness:
     def __init__(self):
         self.kb = load_kb()
         self._eval_owned_ids: set[str] = set()
-        self._run_id = str(uuid.uuid4())[:8]
+        self._run_prefix = os.getenv("EVAL_RUN_PREFIX", "torrin:")
+        self._run_id = f"{self._run_prefix}{str(uuid.uuid4())[:8]}"
 
     async def setup(self):
         """Call before first phase: ensure indexes exist."""
         from src.db import ensure_indexes
         await ensure_indexes()
 
-    async def clear_eval_skills(self):
-        """Delete only eval-owned Skill nodes. Leaves teammate/demo data intact."""
+    async def clear_eval_skills(self, clear_legacy: bool = False):
+        """Delete eval-owned Skill nodes. Leaves teammate/demo data intact.
+
+        Args:
+            clear_legacy: Also remove old un-prefixed eval skills (eval_run
+                          IS NOT NULL but contains no ':'). Use once to clean
+                          up pre-prefix runs that could block new creates.
+        """
         from src.db.connection import get_driver
 
         driver = await get_driver()
         async with driver.session() as session:
             result = await session.run(
-                "MATCH (s:Skill) WHERE s.eval_run IS NOT NULL DETACH DELETE s"
+                "MATCH (s:Skill) WHERE s.eval_run STARTS WITH $prefix DETACH DELETE s",
+                prefix=self._run_prefix,
             )
             summary = await result.consume()
             deleted = summary.counters.nodes_deleted
-            logger.info("Cleared %d eval-tagged skill nodes", deleted)
+            logger.info("Cleared %d eval-tagged skill nodes (prefix=%s)", deleted, self._run_prefix)
+
+            if clear_legacy:
+                result = await session.run(
+                    "MATCH (s:Skill) WHERE s.eval_run IS NOT NULL "
+                    "AND NOT s.eval_run CONTAINS ':' DETACH DELETE s"
+                )
+                legacy_summary = await result.consume()
+                legacy_deleted = legacy_summary.counters.nodes_deleted
+                logger.info("Cleared %d legacy (un-prefixed) eval skill nodes", legacy_deleted)
+
         self._eval_owned_ids.clear()
 
     async def _tag_eval_skill(self, skill_id: str):
