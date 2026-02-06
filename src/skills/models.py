@@ -14,7 +14,7 @@ class Skill(BaseModel):
 
     # Content
     problem: str
-    resolution: str
+    resolution_md: str
     conditions: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
 
@@ -50,7 +50,7 @@ class Skill(BaseModel):
     def create_new(
         title: str,
         problem: str,
-        resolution: str,
+        resolution_md: str,
         embedding: list[float],
         conditions: list[str] | None = None,
         keywords: list[str] | None = None,
@@ -62,7 +62,7 @@ class Skill(BaseModel):
             skill_id=str(uuid.uuid4()),
             title=title,
             problem=problem,
-            resolution=resolution,
+            resolution_md=resolution_md,
             embedding=embedding,
             conditions=conditions or [],
             keywords=keywords or [],
@@ -83,7 +83,7 @@ class Skill(BaseModel):
 class SkillUpdate(BaseModel):
     title: str | None = None
     problem: str | None = None
-    resolution: str | None = None
+    resolution_md: str | None = None
     conditions: list[str] | None = None
     keywords: list[str] | None = None
     embedding: list[float] | None = None

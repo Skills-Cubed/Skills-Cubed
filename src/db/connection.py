@@ -11,7 +11,7 @@ async def get_driver():
     global _driver
     if _driver is None:
         uri = os.environ["NEO4J_URI"]
-        user = os.environ["NEO4J_USER"]
+        user = os.environ["NEO4J_USERNAME"]
         password = os.environ["NEO4J_PASSWORD"]
         _driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
     return _driver
@@ -57,11 +57,26 @@ async def initialize_indexes():
         await result.consume()
 
         # Full-text index for keyword search
+        # DROP first — IF NOT EXISTS won't update an existing index with old fields
+        result = await session.run(
+            "DROP INDEX skill_keywords IF EXISTS"
+        )
+        await result.consume()
         result = await session.run(
             """
             CREATE FULLTEXT INDEX skill_keywords IF NOT EXISTS
             FOR (n:Skill)
-            ON EACH [n.title, n.problem, n.resolution, n.keywords]
+            ON EACH [n.title, n.problem, n.resolution_md, n.keywords]
+            """
+        )
+        await result.consume()
+
+        # One-time data migration: rename legacy resolution → resolution_md
+        result = await session.run(
+            """
+            MATCH (s:Skill) WHERE s.resolution IS NOT NULL AND s.resolution_md IS NULL
+            SET s.resolution_md = s.resolution
+            REMOVE s.resolution
             """
         )
         await result.consume()

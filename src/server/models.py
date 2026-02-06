@@ -5,20 +5,18 @@ from pydantic import BaseModel, Field
 
 class SearchRequest(BaseModel):
     query: str
-    top_k: int = 5
-    min_score: float = 0.0
 
 
 class SkillMatch(BaseModel):
     skill_id: str          # UUID (application-generated)
     title: str
-    score: float           # Relevance score [0, 1], hybrid of keyword + vector
-    resolution: str
+    confidence: float      # Historical success rate [0, 1]
+    resolution_md: str
     conditions: list[str]
 
 
 class SearchResponse(BaseModel):
-    matches: list[SkillMatch]
+    skill: SkillMatch | None
     query: str
     search_time_ms: float
 
