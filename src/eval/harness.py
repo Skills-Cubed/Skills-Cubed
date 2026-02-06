@@ -84,6 +84,28 @@ def format_conversation(conversation: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Retry helper for transient API errors (503, rate limits)
+# ---------------------------------------------------------------------------
+
+MAX_RETRIES = 4
+BACKOFF_BASE = 2.0  # seconds — doubles each retry: 2, 4, 8, 16
+
+async def _retry(coro_fn, *args, label: str = ""):
+    """Call an async function with exponential backoff on transient errors."""
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            return await coro_fn(*args)
+        except Exception as e:
+            err_str = str(e)
+            transient = "503" in err_str or "overloaded" in err_str.lower() or "unavailable" in err_str.lower()
+            if not transient or attempt == MAX_RETRIES:
+                raise
+            wait = BACKOFF_BASE * (2 ** attempt)
+            logger.warning("Transient error (%s), retry %d/%d in %.0fs: %s", label, attempt + 1, MAX_RETRIES, wait, err_str[:120])
+            await asyncio.sleep(wait)
+
+
+# ---------------------------------------------------------------------------
 # Evaluation Harness
 # ---------------------------------------------------------------------------
 
@@ -168,7 +190,7 @@ class EvaluationHarness:
                     continue
 
                 start = time.monotonic()
-                result = await search_skills_orchestration(query)
+                result = await _retry(search_skills_orchestration, query, label=f"baseline:{i}")
                 elapsed = (time.monotonic() - start) * 1000
 
                 raw_hit = result.skill is not None
@@ -231,7 +253,7 @@ class EvaluationHarness:
                     continue
 
                 start = time.monotonic()
-                result = await search_skills_orchestration(query)
+                result = await _retry(search_skills_orchestration, query, label=f"learn:{i}")
                 elapsed = (time.monotonic() - start) * 1000
 
                 raw_hit = result.skill is not None
@@ -242,7 +264,7 @@ class EvaluationHarness:
                     # No skill at all — create new
                     formatted = format_conversation(conv)
                     try:
-                        create_result = await create_skill_orchestration(formatted)
+                        create_result = await _retry(create_skill_orchestration, formatted, label=f"create:{i}")
                         if create_result.created:
                             self._eval_owned_ids.add(create_result.skill_id)
                             await self._tag_eval_skill(create_result.skill_id)
@@ -253,7 +275,7 @@ class EvaluationHarness:
                     # Eval-owned skill found — update it
                     formatted = format_conversation(conv)
                     try:
-                        await update_skill_orchestration(result.skill.skill_id, formatted)
+                        await _retry(update_skill_orchestration, result.skill.skill_id, formatted, label=f"update:{i}")
                     except Exception:
                         logger.exception("Update failed on conversation %d", i)
 
@@ -321,7 +343,7 @@ class EvaluationHarness:
                     continue
 
                 start = time.monotonic()
-                result = await search_skills_orchestration(query)
+                result = await _retry(search_skills_orchestration, query, label=f"post:{i}")
                 elapsed = (time.monotonic() - start) * 1000
 
                 raw_hit = result.skill is not None
