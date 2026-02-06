@@ -19,7 +19,7 @@ async def update_skill_orchestration(
     prompt = REFINEMENT_PROMPT.format(
         title=skill.title,
         problem=skill.problem,
-        resolution=skill.resolution,
+        resolution=skill.resolution_md,
         conditions=skill.conditions,
         keywords=skill.keywords,
         conversation=conversation,
@@ -37,7 +37,7 @@ async def update_skill_orchestration(
     updates = SkillUpdate(
         title=refined.get("title"),
         problem=refined.get("problem"),
-        resolution=refined.get("resolution"),
+        resolution_md=refined.get("resolution"),
         conditions=refined.get("conditions"),
         keywords=refined.get("keywords"),
         embedding=new_embedding,

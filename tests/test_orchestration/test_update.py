@@ -13,7 +13,7 @@ def _make_skill(**overrides):
         title="Password Reset",
         version=1,
         problem="Customer cannot log in",
-        resolution="# Steps\n**Do:** Reset password",
+        resolution_md="# Steps\n**Do:** Reset password",
         conditions=["user is locked out"],
         keywords=["password", "login"],
         embedding=[0.1] * 768,

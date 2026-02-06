@@ -76,7 +76,7 @@ async def search_skills_orchestration(query: str) -> SearchResponse:
         skill_id=chosen_skill.skill_id,
         title=chosen_skill.title,
         confidence=chosen_skill.confidence,
-        resolution_md=chosen_skill.resolution,
+        resolution_md=chosen_skill.resolution_md,
         conditions=chosen_skill.conditions,
     )
 

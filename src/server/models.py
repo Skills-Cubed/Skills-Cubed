@@ -5,8 +5,6 @@ from pydantic import BaseModel, Field
 
 class SearchRequest(BaseModel):
     query: str
-    top_k: int = 5
-    min_score: float = 0.0
 
 
 class SkillMatch(BaseModel):

@@ -166,6 +166,7 @@ async def hybrid_search(
     query_embedding: list[float],   # Pre-computed by orchestration layer
     query_text: str,                # Raw text for keyword search
     top_k: int = 5,
+    min_score: float = 0.0,         # Internal pipeline config, not in public SearchRequest
 ) -> list[dict]:                    # [{"skill": Skill, "score": float}]
 
 async def create_skill(skill: Skill) -> Skill

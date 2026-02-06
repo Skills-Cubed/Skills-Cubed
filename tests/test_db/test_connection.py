@@ -3,8 +3,8 @@ import os
 import pytest
 
 pytestmark = pytest.mark.skipif(
-    not all(os.getenv(v) for v in ("NEO4J_URI", "NEO4J_USER", "NEO4J_PASSWORD")),
-    reason="Neo4j credentials not configured (need NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)",
+    not all(os.getenv(v) for v in ("NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD")),
+    reason="Neo4j credentials not configured (need NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD)",
 )
 
 

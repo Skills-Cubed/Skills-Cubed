@@ -8,7 +8,7 @@ How we measure that the system actually learns and improves over time.
 |--------|-----------------|--------|
 | **Resolution rate** | % of conversations resolved successfully | +15-25pp over baseline |
 | **Flash/Pro ratio** | % of queries handled by Flash (cached skills) vs Pro (reasoning) | 60-70% fewer Pro calls after ~100 conversations |
-| **Search hit rate** | % of queries where search returns a relevant skill (score > min_score) | Increasing over time as skills accumulate |
+| **Judge hit rate** | % of queries where the Flash judge picks a matching skill (skill is not None) | Increasing over time as skills accumulate |
 
 ## Ground Truth: kb.json
 
@@ -42,7 +42,7 @@ Example:
 
 - Re-run dev split conversations against learned skills
 - Compare to Phase 1 baseline
-- Record: resolution rate, Flash ratio, search hit rate, avg score
+- Record: resolution rate, Flash ratio, judge hit rate, fallback-to-Pro rate
 
 ## Resolution Heuristic
 
@@ -79,7 +79,7 @@ Three conversations from the dev split, chosen to tell the story:
 |--------|----------|-------------------|-------------------|
 | Resolution rate | ~55-60% | ~65-70% | ~75-80% |
 | Flash ratio | 0% | ~40% | ~65% |
-| Search hit rate | 0% | ~35% | ~60% |
+| Judge hit rate | 0% | ~35% | ~60% |
 | Avg response time | ~3-5s | ~2-3s | ~1-2s |
 
 These are estimates. Actual numbers depend on skill extraction quality and search accuracy.

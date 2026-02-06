@@ -14,7 +14,7 @@ def _make_skill(**overrides):
         title="Password Reset",
         version=1,
         problem="Customer cannot log in",
-        resolution="# Steps\n**Do:** Reset password",
+        resolution_md="# Steps\n**Do:** Reset password",
         conditions=["user is locked out"],
         keywords=["password", "login"],
         embedding=[0.1] * 768,
@@ -163,6 +163,6 @@ async def test_create_skill_response_contains_full_skill_dict(mock_pro, mock_emb
     result = await create_skill_orchestration("conversation")
 
     skill_dict = result.skill
-    for field in ["skill_id", "title", "problem", "resolution", "conditions",
+    for field in ["skill_id", "title", "problem", "resolution_md", "conditions",
                   "keywords", "embedding", "confidence", "created_at", "updated_at"]:
         assert field in skill_dict, f"Missing field: {field}"

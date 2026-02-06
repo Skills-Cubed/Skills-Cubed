@@ -7,7 +7,7 @@ def test_create_new_generates_uuid_and_timestamps():
     skill = Skill.create_new(
         title="Test",
         problem="Test problem",
-        resolution="# Steps",
+        resolution_md="# Steps",
         embedding=[0.1] * 768,
     )
     assert len(skill.skill_id) == 36  # UUID format
@@ -20,7 +20,7 @@ def test_create_new_with_all_fields():
     skill = Skill.create_new(
         title="Password Reset",
         problem="Can't log in",
-        resolution="# Steps\n**Do:** Reset",
+        resolution_md="# Steps\n**Do:** Reset",
         embedding=[0.1] * 768,
         conditions=["locked out"],
         keywords=["password"],
@@ -37,7 +37,7 @@ def test_skill_rejects_wrong_embedding_dim():
         Skill.create_new(
             title="Test",
             problem="Test",
-            resolution="# Steps",
+            resolution_md="# Steps",
             embedding=[0.1] * 100,  # wrong dim
         )
 
@@ -47,7 +47,7 @@ def test_skill_rejects_empty_embedding():
         Skill.create_new(
             title="Test",
             problem="Test",
-            resolution="# Steps",
+            resolution_md="# Steps",
             embedding=[],
         )
 
@@ -56,7 +56,7 @@ def test_to_neo4j_props_returns_dict():
     skill = Skill.create_new(
         title="Test",
         problem="Test",
-        resolution="# Steps",
+        resolution_md="# Steps",
         embedding=[0.1] * 768,
     )
     props = skill.to_neo4j_props()
@@ -69,7 +69,7 @@ def test_from_neo4j_node_round_trips():
     skill = Skill.create_new(
         title="Test",
         problem="Test",
-        resolution="# Steps",
+        resolution_md="# Steps",
         embedding=[0.1] * 768,
     )
     props = skill.to_neo4j_props()

@@ -34,7 +34,7 @@ async def create_skill_orchestration(
     skill = Skill.create_new(
         title=extracted["title"],
         problem=extracted["problem"],
-        resolution=extracted["resolution"],
+        resolution_md=extracted["resolution"],
         embedding=embedding,
         conditions=extracted.get("conditions", []),
         keywords=extracted.get("keywords", []),
