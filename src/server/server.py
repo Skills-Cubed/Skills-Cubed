@@ -95,5 +95,6 @@ if __name__ == "__main__":
             Route("/health", health),
             Mount("/", app=mcp_app),
         ],
+        lifespan=mcp_app.lifespan,
     )
     uvicorn.run(app, host="0.0.0.0", port=port)
