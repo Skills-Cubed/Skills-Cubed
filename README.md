@@ -1,0 +1,68 @@
+# Skills-Squared
+
+A self-documenting customer service AI that learns from its own conversations. Built as an open-source MCP (Model Context Protocol) plugin, Skills-Squared enables any thinking model to continuously improve its support capabilities by extracting and reusing successful resolution patterns.
+
+## The MCP Server
+
+Skills-Squared implements a **FastAPI-based MCP server** that exposes three core tools:
+
+- **Search Skills** — Query existing resolution patterns and skills documentation using hybrid search (keyword + vector) to find known solutions for incoming customer queries.
+- **Create Skill** — When a new resolution pattern is identified from a successful interaction, generate structured skills documentation that can be retrieved for future similar queries.
+- **Update Skill** — Refine and improve existing skills based on new conversation data, keeping documentation accurate as products and processes evolve.
+
+The server connects to a **Neo4j graph database** (hosted on GCP) that supports hybrid search and handles continual updates without requiring full re-indexing. LLM calls are routed through **Gemini Flash** for fast, efficient responses and **Gemini Pro** for deeper reflection tasks like pattern extraction and sentiment analysis.
+
+## How It Works
+
+1. A customer service bot (e.g., Intercom's Fin) handles a support interaction
+2. Skills-Squared analyzes the conversation outcome using sentiment analysis
+3. Successful resolutions are distilled into reusable skill documents with conditional logic
+4. On future queries, the MCP server is called first to check for known patterns — turning 30-second LLM reasoning calls into 5-second cached lookups
+
+The result is an organization-specific knowledge base that gets better with every interaction, reducing both response time and compute costs.
+
+## Setup
+
+### Prerequisites
+
+- Python 3.11+
+- Neo4j Aura instance (or local Docker)
+- Google Gemini API key
+
+### Install
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -e ".[dev]"
+```
+
+### Dataset
+
+Clone the ABCD dataset (required for evaluation and demo):
+
+```bash
+bash scripts/setup_data.sh
+```
+
+This places the dataset at `data/abcd/data/`. If already present, the script is a no-op.
+
+### Configure
+
+```bash
+cp .env.example .env
+# Fill in NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, GEMINI_API_KEY
+```
+
+### Verify
+
+```bash
+# Check dataset is available
+python3 scripts/explore_abcd.py
+
+# Run tests (integration tests require Neo4j creds in .env)
+python3 -m pytest tests/
+
+# Check models load
+python3 -c "from src.skills.models import Skill; print(list(Skill.model_fields.keys()))"
+```
