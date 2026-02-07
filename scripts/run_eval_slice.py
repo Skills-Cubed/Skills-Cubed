@@ -1,28 +1,89 @@
-"""Run a small eval harness slice for validation before committing to full dataset.
+"""Run eval harness: baseline (no skills) vs continual learning on same conversations.
 
 Usage:
     venv/bin/python3 scripts/run_eval_slice.py
-    venv/bin/python3 scripts/run_eval_slice.py --dev 50 --train 100
+    venv/bin/python3 scripts/run_eval_slice.py --size 25
 """
 
 import argparse
 import asyncio
+import json
 import logging
+import os
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
+# Force all LLM calls to use Flash (including create/update orchestration)
+os.environ["GEMINI_PRO_MODEL"] = os.environ.get("GEMINI_FLASH_MODEL", "gemini-3-flash-preview")
+
 from src.eval.harness import EvaluationHarness, load_dataset
+from src.eval.metrics import ConversationMetrics
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "eval_output"
+CHECKPOINT_PATH = OUTPUT_DIR / "eval_results.partial.json"
+FINAL_PATH = OUTPUT_DIR / "eval_results.json"
 
 logger = logging.getLogger(__name__)
 
 
-async def main(dev_size: int, train_size: int, checkpoint_interval: int, clear_legacy: bool = False):
+def _build_payload(
+    baseline: list[ConversationMetrics],
+    continual: list[ConversationMetrics],
+    skills_created: int,
+    run_id: str,
+    run_prefix: str,
+    size: int,
+    baseline_last_index: int,
+    continual_last_index: int,
+) -> dict:
+    b_scores = [r.judge_score for r in baseline]
+    c_scores = [r.judge_score for r in continual]
+    return {
+        "meta": {
+            "size": size,
+            "run_id": run_id,
+            "run_prefix": run_prefix,
+        },
+        "progress": {
+            "baseline_last_index": baseline_last_index,
+            "continual_last_index": continual_last_index,
+        },
+        "baseline": [asdict(m) for m in baseline],
+        "continual": [asdict(m) for m in continual],
+        "skills_created": skills_created,
+        "summary": {
+            "baseline_avg_score": sum(b_scores) / len(b_scores) if b_scores else 0.0,
+            "continual_avg_score": sum(c_scores) / len(c_scores) if c_scores else 0.0,
+            "improvement": (sum(c_scores) / len(c_scores) - sum(b_scores) / len(b_scores)) if b_scores and c_scores else 0.0,
+            "baseline_count": len(baseline),
+            "continual_count": len(continual),
+        },
+    }
+
+
+def _write_payload(path: Path, payload: dict):
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2)
+
+
+def _load_checkpoint(size: int) -> dict:
+    with open(CHECKPOINT_PATH) as f:
+        data = json.load(f)
+    cp_size = data.get("meta", {}).get("size")
+    if cp_size is not None and cp_size != size:
+        raise ValueError(
+            f"Checkpoint size mismatch: checkpoint has {cp_size}, requested {size}. "
+            "Use matching --size, or delete eval_output/eval_results.partial.json."
+        )
+    return data
+
+
+async def main(size: int, clear_legacy: bool, resume: bool):
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -30,66 +91,146 @@ async def main(dev_size: int, train_size: int, checkpoint_interval: int, clear_l
 
     OUTPUT_DIR.mkdir(exist_ok=True)
 
-    logger.info("Loading datasets...")
-    dev = load_dataset("dev")[:dev_size]
-    train = load_dataset("train")[:train_size]
-    logger.info("Slice: %d dev, %d train conversations", len(dev), len(train))
+    logger.info("Loading dataset...")
+    conversations = load_dataset("train")[:size]
+    logger.info("Using %d conversations for both baseline and continual", len(conversations))
 
     harness = EvaluationHarness()
     await harness.setup()
-    await harness.clear_eval_skills(clear_legacy=clear_legacy)
 
-    # Phase 1: Baseline
-    logger.info("=== Phase 1: Baseline (%d conversations) ===", len(dev))
-    baseline = await harness.run_baseline(dev)
-    EvaluationHarness.export_dual(baseline, str(OUTPUT_DIR / "baseline.json"))
+    baseline: list[ConversationMetrics] = []
+    continual: list[ConversationMetrics] = []
+    baseline_last_index = -1
+    continual_last_index = -1
 
-    # Phase 2: Learning
-    logger.info("=== Phase 2: Learning (%d conversations, checkpoint every %d) ===", len(train), checkpoint_interval)
-    learning = await harness.run_learning(train, checkpoint_interval=checkpoint_interval)
-    EvaluationHarness.export_dual(learning, str(OUTPUT_DIR / "learning.json"))
+    if resume:
+        if not CHECKPOINT_PATH.exists():
+            raise FileNotFoundError(
+                f"--resume specified but checkpoint not found: {CHECKPOINT_PATH}"
+            )
+        checkpoint = _load_checkpoint(size)
+        meta = checkpoint.get("meta", {})
+        progress = checkpoint.get("progress", {})
 
-    skills_created = len(harness._eval_owned_ids)
-    if skills_created == 0:
-        logger.warning("No eval skills created — results may be inconclusive")
+        harness._run_prefix = meta.get("run_prefix", harness._run_prefix)
+        harness._run_id = meta.get("run_id", harness._run_id)
+        await harness.load_eval_skill_ids()
 
-    # Phase 3: Post-Learning
-    logger.info("=== Phase 3: Post-Learning (%d conversations) ===", len(dev))
-    post = await harness.run_post_learning(dev)
-    EvaluationHarness.export_dual(post, str(OUTPUT_DIR / "post_learning.json"))
+        baseline = [ConversationMetrics(**m) for m in checkpoint.get("baseline", [])]
+        continual = [ConversationMetrics(**m) for m in checkpoint.get("continual", [])]
+        baseline_last_index = int(progress.get("baseline_last_index", -1))
+        continual_last_index = int(progress.get("continual_last_index", -1))
+
+        logger.info(
+            "Resuming run_id=%s (baseline idx=%d, continual idx=%d, skills=%d)",
+            harness._run_id,
+            baseline_last_index,
+            continual_last_index,
+            len(harness._eval_skill_ids),
+        )
+    else:
+        if CHECKPOINT_PATH.exists():
+            CHECKPOINT_PATH.unlink()
+        await harness.clear_eval_skills(clear_legacy=clear_legacy)
+
+    async def _progress_hook(phase: str, index: int, results: list[ConversationMetrics]):
+        nonlocal baseline, continual, baseline_last_index, continual_last_index
+        if phase == "baseline":
+            baseline = results
+            baseline_last_index = index
+        else:
+            continual = results
+            continual_last_index = index
+        payload = _build_payload(
+            baseline=baseline,
+            continual=continual,
+            skills_created=len(harness._eval_skill_ids),
+            run_id=harness._run_id,
+            run_prefix=harness._run_prefix,
+            size=size,
+            baseline_last_index=baseline_last_index,
+            continual_last_index=continual_last_index,
+        )
+        _write_payload(CHECKPOINT_PATH, payload)
+
+    # Phase 1: Baseline (no skills)
+    if baseline_last_index < len(conversations) - 1:
+        logger.info(
+            "=== Phase 1: Baseline (%d conversations, no skills) [start=%d] ===",
+            len(conversations),
+            baseline_last_index + 1,
+        )
+        baseline = await harness.run_baseline(
+            conversations,
+            start_index=baseline_last_index + 1,
+            prior_results=baseline,
+            progress_hook=_progress_hook,
+        )
+    else:
+        logger.info("=== Phase 1: Baseline already complete (%d/%d) ===", len(baseline), len(conversations))
+
+    # Phase 2: Continual learning (same conversations, with skill search/create/update)
+    if continual_last_index < len(conversations) - 1:
+        logger.info(
+            "=== Phase 2: Continual Learning (%d conversations) [start=%d] ===",
+            len(conversations),
+            continual_last_index + 1,
+        )
+        continual = await harness.run_continual(
+            conversations,
+            start_index=continual_last_index + 1,
+            prior_results=continual,
+            progress_hook=_progress_hook,
+        )
+    else:
+        logger.info("=== Phase 2: Continual already complete (%d/%d) ===", len(continual), len(conversations))
+
+    # Export final + keep checkpoint as recovery artifact
+    payload = _build_payload(
+        baseline=baseline,
+        continual=continual,
+        skills_created=len(harness._eval_skill_ids),
+        run_id=harness._run_id,
+        run_prefix=harness._run_prefix,
+        size=size,
+        baseline_last_index=len(conversations) - 1,
+        continual_last_index=len(conversations) - 1,
+    )
+    _write_payload(FINAL_PATH, payload)
+    _write_payload(CHECKPOINT_PATH, payload)
 
     # Summary
-    b = baseline["eval_scoped"].aggregate()
-    p = post["eval_scoped"].aggregate()
-    l = learning["eval_scoped"].aggregate()
+    b_avg = sum(r.judge_score for r in baseline) / len(baseline) if baseline else 0
+    c_avg = sum(r.judge_score for r in continual) / len(continual) if continual else 0
+    c_skill_used = sum(1 for r in continual if r.skill_used)
 
     print("\n" + "=" * 60)
-    print("EVAL SLICE SUMMARY (eval-scoped)")
+    print("EVAL RESULTS")
     print("=" * 60)
-    print(f"  Dev slice:         {len(dev)}")
-    print(f"  Train slice:       {len(train)}")
-    print(f"  Skills created:    {skills_created}")
-    print(f"  Baseline hit rate: {b.judge_hit_rate:.1%}")
-    print(f"  Learning hit rate: {l.judge_hit_rate:.1%}")
-    print(f"  Post-learning:     {p.judge_hit_rate:.1%}")
-    print(f"  Improvement:       +{(p.judge_hit_rate - b.judge_hit_rate):.1%}")
-    print(f"  Flash ratio:       {b.flash_ratio:.1%} → {p.flash_ratio:.1%}")
-    print(f"  Pro fallback:      {b.pro_fallback_rate:.1%} → {p.pro_fallback_rate:.1%}")
+    print(f"  Conversations:       {len(conversations)}")
+    print(f"  Baseline scored:     {len(baseline)}")
+    print(f"  Continual scored:    {len(continual)}")
+    print(f"  Skills created:      {len(harness._eval_skill_ids)}")
+    print(f"  Skills used:         {c_skill_used}/{len(continual)}")
+    print(f"  Baseline avg score:  {b_avg:.2f}/5")
+    print(f"  Continual avg score: {c_avg:.2f}/5")
+    print(f"  Improvement:         {c_avg - b_avg:+.2f}")
     print("=" * 60)
-    print(f"  Output: {OUTPUT_DIR}/")
+    print(f"  Output: {FINAL_PATH}")
+    print(f"  Checkpoint: {CHECKPOINT_PATH}")
+    print(f"  Run: venv/bin/python3 scripts/visualize_eval.py")
     print()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run eval harness on a small slice")
-    parser.add_argument("--dev", type=int, default=100, help="Number of dev conversations (default: 100)")
-    parser.add_argument("--train", type=int, default=200, help="Number of train conversations (default: 200)")
-    parser.add_argument("--checkpoint", type=int, default=25, help="Checkpoint interval (default: 25)")
-    parser.add_argument("--clear-legacy", action="store_true", help="Also remove old un-prefixed eval skills")
+    parser = argparse.ArgumentParser(description="Run eval: baseline vs continual learning")
+    parser.add_argument("--size", type=int, default=50, help="Number of conversations (default: 50)")
+    parser.add_argument("--clear-legacy", action="store_true", help="Remove old un-prefixed eval skills")
+    parser.add_argument("--resume", action="store_true", help="Resume from eval_output/eval_results.partial.json")
     args = parser.parse_args()
 
     try:
-        asyncio.run(main(args.dev, args.train, args.checkpoint, args.clear_legacy))
+        asyncio.run(main(args.size, args.clear_legacy, args.resume))
     except KeyboardInterrupt:
         print("\nInterrupted", file=sys.stderr)
         sys.exit(1)
