@@ -7,7 +7,7 @@ A self-documenting customer service AI that learns from its own conversations. B
 The MCP server is live at:
 
 ```
-http://localhost:8080/mcp
+https://mcp-render-test.onrender.com/mcp
 ```
 
 ### Google ADK Agent
